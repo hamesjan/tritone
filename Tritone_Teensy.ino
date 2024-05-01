@@ -74,7 +74,7 @@ void loop() {
 int calculateBPM(float amplitude) {
   // Count peaks in the last second
   unsigned long currentTime = millis();
-  if (currentTime - lastPeakCountTime == 1000) {
+  if (currentTime - lastPeakCountTime >= 1000) {
     // One second has elapsed, calculate BPM
     bpm = peakCount*60;
     // Reset peak count and update lastPeakCountTime
