@@ -1,4 +1,5 @@
 #include <Audio.h>
+#include <Arduino.h>
 #include <Wire.h>
 #include <SPI.h>
 #include <SD.h>
@@ -13,12 +14,8 @@ AudioMixer4               mixer;
 AudioConnection patchCord0(i2s1, 0, mixer, 0);
 AudioConnection patchCord1(mixer, fft);
 AudioConnection patchCord2(i2s1, 1, peak1, 0);
-// GUItool: end automatically generated code
 
 AudioControlSGTL5000 audioShield;
-unsigned long lastPeakCountTime = 0;  // Time of the last peak count
-unsigned int peakCount = 0;  // Number of peaks detected in the last second
-unsigned int bpm = 0;  // Beats per minute
 
 void setup() {
   Serial.begin(9600);  // Initialize serial communication
@@ -30,44 +27,73 @@ void setup() {
    fft.windowFunction(AudioWindowHanning1024);
 }
 
+unsigned long lastPeakCountTime = 0;  // Time of the last peak count  
+unsigned int peakCount = 0;  // Number of peaks detected in the last second
+unsigned int bpm = 0;  // Beats per minute
+
 void loop() {
   if(fft.available() && peak1.available()){
     float maxFreq = 0;
     float maxVal = 0;
-    for (int i = 1; i < 512; i++) {
+    for(int i = 1; i < 512; i++){
       float val = fft.read(i);
-      if (val > maxVal) {
+      if(val > maxVal){
         maxVal = val;
-        maxFreq = i * 44100 / 1024; //sampling rate (44100) and size of fft (1024)
-      //By dividing i by 1024, you get a value between 0 and 1
-      //representing the position of the bin in the frequency spectrum. 
-      //Multiplying this value by the sampling rate 44100 gives you the actual frequency in Hz that the bin represents. 
-      //This calculation allows you to determine the frequency of the audio signal corresponding to each bin in the FFT output.
+        maxFreq = i * 44100/1024;
       }
-
     }
-      float amplitude = peak1.read();
-      if(amplitude < 0.5){
-        amplitude = 0;
+    float amplitude = peak1.read();
+    if(amplitude < 0.07){
+      amplitude = 0;
+    }
+
+    unsigned long currentTime = millis();
+    static unsigned long intervalStartTime = currentTime;
+    static float sumFreq = 0;
+    static float avgFreq[5] = {0}; // Array to store 5 average frequencies
+    static int sampleCount = 0;
+    static float sumAmplitude = 0;
+    static float avgAmplitude = 0;
+    static int sumBPM = 0;
+    static int avgBPM = 0;
+
+    if(currentTime - intervalStartTime <= 5000 && sampleCount < 5){
+      if(currentTime - intervalStartTime >= 1000){
+        avgFreq[sampleCount] = sumFreq/86;
+        sumFreq = 0;
+        sampleCount++;
+        intervalStartTime = currentTime;
       }
 
       bpm = calculateBPM(amplitude);
-
+      sumBPM += bpm;
+      avgBPM = sumBPM/430;
+      sumFreq += maxFreq;
+      sumAmplitude += amplitude;
+      avgAmplitude = sumAmplitude/430;
+    }
+    else{
       String tempo;
-      if (bpm < 60) {
+      if (avgBPM < 60) {
         tempo = "Largo";
-      } else if (bpm < 76) {
+      } else if (avgBPM < 76) {
         tempo = "Adagio";
-      } else if (bpm < 108) {
+      } else if (avgBPM < 108) {
         tempo = "Moderato";
-      } else if (bpm < 120) {
+      } else if (avgBPM < 120) {
         tempo = "Allegro";
       } else {
         tempo = "Presto";
-      }
-    
-    Serial.println(amplitude);
-    Serial.printf("Dominant Frequency: %.2f Hz | Amplitude: %.2f | Tempo: %s | BPM: %d\n", maxFreq, amplitude, tempo.c_str(), bpm);
+      } 
+      Serial.printf("Average Dominant Frequencies (Hz): %.2f, %.2f, %.2f, %.2f, %.2f | Average Amplitude: %.2f\n | Average BPM: %d | Average Tempo: %s \n", avgFreq[0], avgFreq[1], avgFreq[2], avgFreq[3], avgFreq[4], avgAmplitude, avgBPM, tempo.c_str());
+      sumFreq = 0;
+      sampleCount = 0;
+      sumAmplitude = 0;
+      sumBPM = 0;
+      avgBPM = 0;
+      avgAmplitude = 0;
+      intervalStartTime = currentTime; 
+    }
   }
 }
 
@@ -81,10 +107,14 @@ int calculateBPM(float amplitude) {
     peakCount = 0;
     lastPeakCountTime = currentTime;
   }
-
+  if(amplitude < 0.9){
+    amplitude = 0;
+  }
   // Detect peak
-  if(amplitude >= 0.5){ //fine tune 
+  if(amplitude >= 0.9){ //fine tune 
     peakCount++;
   }
+  //Serial.println(amplitude);
   return bpm;
 }
+
